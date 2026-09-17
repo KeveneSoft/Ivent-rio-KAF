@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppProvider } from './context/AppContext';
+import { AppProvider, useApp } from './context/AppContext';
 import { Header } from './components/common/Header';
 import { Sidebar, NavTab } from './components/common/Sidebar';
 import { OfflineIndicator } from './components/common/OfflineIndicator';
@@ -16,9 +16,12 @@ import { FinanceView } from './components/finance/FinanceView';
 import { AuditView } from './components/audit/AuditView';
 import { LabelGeneratorModal } from './components/labels/LabelGeneratorModal';
 import { UsersPermissionsModal } from './components/users/UsersPermissionsModal';
+import { UsersManagementView } from './components/users/UsersManagementView';
+import { LoginView } from './components/auth/LoginView';
 import { Product, WarehouseLocation, Asset } from './types';
 
 const AppContent: React.FC = () => {
+  const { isAuthenticated } = useApp();
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard-stock');
 
   // Modals state
@@ -27,6 +30,10 @@ const AppContent: React.FC = () => {
   const [labelTargetProduct, setLabelTargetProduct] = useState<Product | null>(null);
   const [labelTargetLocation, setLabelTargetLocation] = useState<WarehouseLocation | null>(null);
   const [labelTargetAsset, setLabelTargetAsset] = useState<Asset | null>(null);
+
+  if (!isAuthenticated) {
+    return <LoginView />;
+  }
 
   // Label openers
   const handleOpenProductLabel = (product: Product) => {
@@ -59,6 +66,7 @@ const AppContent: React.FC = () => {
       <Header
         onOpenQuickPOS={() => setActiveTab('pos')}
         onOpenUserPermissions={() => setIsUserPermissionsOpen(true)}
+        onNavigateUsers={() => setActiveTab('users')}
       />
 
       {/* Main Body with Sidebar and Content View */}
@@ -108,6 +116,8 @@ const AppContent: React.FC = () => {
             {activeTab === 'finance' && <FinanceView />}
 
             {activeTab === 'audit' && <AuditView />}
+
+            {activeTab === 'users' && <UsersManagementView />}
           </div>
         </main>
       </div>

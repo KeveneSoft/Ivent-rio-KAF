@@ -16,6 +16,8 @@ import {
   AccountingEntry,
   AuditEvent,
   UserProfile,
+  UserRole,
+  UserPermissions,
   ScanDeviceType,
   InvoiceType,
   PaymentMethod,
@@ -52,6 +54,38 @@ interface AppContextType {
   currentUser: UserProfile;
   setCurrentUser: (user: UserProfile) => void;
   users: UserProfile[];
+  isAuthenticated: boolean;
+  login: (identifier: string, password: string) => { success: boolean; message?: string };
+  logout: () => void;
+  registerUser: (userData: {
+    name: string;
+    username: string;
+    email: string;
+    password?: string;
+    role?: UserRole;
+    avatar?: string;
+    assignedWarehouseId?: string;
+    authProvider?: 'local' | 'google';
+  }) => { success: boolean; message?: string; user?: UserProfile };
+  loginWithGoogle: (googleData: {
+    email: string;
+    name: string;
+    avatar?: string;
+    role?: UserRole;
+  }) => { success: boolean; message?: string; user?: UserProfile };
+  addUser: (userData: {
+    name: string;
+    username: string;
+    email: string;
+    password?: string;
+    role: UserRole;
+    avatar?: string;
+    assignedWarehouseId?: string;
+    permissions?: Partial<UserPermissions>;
+  }) => { success: boolean; message?: string; user?: UserProfile };
+  updateUser: (userId: string, data: Partial<UserProfile>) => { success: boolean; message?: string };
+  deleteUser: (userId: string) => { success: boolean; message?: string };
+  changeUserPassword: (userId: string, newPassword: string) => { success: boolean; message?: string };
   updateUserPermissions: (userId: string, permissions: Partial<UserProfile['permissions']>) => void;
 
   selectedWarehouseId: string;
@@ -189,6 +223,115 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'inventa_kaf_state_v1';
 
+export const getDefaultPermissionsForRole = (role: UserRole): UserPermissions => {
+  switch (role) {
+    case 'ADMIN':
+      return {
+        viewProducts: true,
+        createProduct: true,
+        editProduct: true,
+        deleteProduct: true,
+        stockIn: true,
+        stockOut: true,
+        stockTransfer: true,
+        physicalInventory: true,
+        approveInventoryAdjustment: true,
+        issueInvoice: true,
+        cancelInvoice: true,
+        viewFinance: true,
+        manageFinance: true,
+        viewAssets: true,
+        manageAssets: true,
+        viewAudit: true,
+        manageUsers: true,
+        editPrices: true,
+        viewCostPrice: true,
+        performInventoryCount: true,
+        applyDiscounts: true,
+        viewFinancialReports: true,
+        viewAccountingLedger: true,
+      };
+    case 'OPERATOR_STOCK':
+      return {
+        viewProducts: true,
+        createProduct: true,
+        editProduct: true,
+        deleteProduct: false,
+        stockIn: true,
+        stockOut: true,
+        stockTransfer: true,
+        physicalInventory: true,
+        approveInventoryAdjustment: false,
+        issueInvoice: false,
+        cancelInvoice: false,
+        viewFinance: false,
+        manageFinance: false,
+        viewAssets: true,
+        manageAssets: false,
+        viewAudit: false,
+        manageUsers: false,
+        editPrices: false,
+        viewCostPrice: false,
+        performInventoryCount: true,
+        applyDiscounts: false,
+        viewFinancialReports: false,
+        viewAccountingLedger: false,
+      };
+    case 'OPERATOR_INVOICE':
+      return {
+        viewProducts: true,
+        createProduct: false,
+        editProduct: false,
+        deleteProduct: false,
+        stockIn: false,
+        stockOut: false,
+        stockTransfer: false,
+        physicalInventory: false,
+        approveInventoryAdjustment: false,
+        issueInvoice: true,
+        cancelInvoice: false,
+        viewFinance: true,
+        manageFinance: true,
+        viewAssets: false,
+        manageAssets: false,
+        viewAudit: false,
+        manageUsers: false,
+        editPrices: false,
+        viewCostPrice: false,
+        performInventoryCount: false,
+        applyDiscounts: true,
+        viewFinancialReports: true,
+        viewAccountingLedger: false,
+      };
+    case 'AUDITOR':
+      return {
+        viewProducts: true,
+        createProduct: false,
+        editProduct: false,
+        deleteProduct: false,
+        stockIn: false,
+        stockOut: false,
+        stockTransfer: false,
+        physicalInventory: true,
+        approveInventoryAdjustment: false,
+        issueInvoice: false,
+        cancelInvoice: false,
+        viewFinance: true,
+        manageFinance: false,
+        viewAssets: true,
+        manageAssets: false,
+        viewAudit: true,
+        manageUsers: false,
+        editPrices: false,
+        viewCostPrice: true,
+        performInventoryCount: true,
+        applyDiscounts: false,
+        viewFinancialReports: true,
+        viewAccountingLedger: true,
+      };
+  }
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Load initial from localStorage if available
   const loadSaved = <T,>(key: string, defaultVal: T): T => {
@@ -200,11 +343,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const [users, setUsers] = useState<UserProfile[]>(() => loadSaved('users', INITIAL_USERS));
+  const [users, setUsers] = useState<UserProfile[]>(() => {
+    const loaded = loadSaved<UserProfile[]>('users', INITIAL_USERS);
+    return loaded.map((u) => {
+      const match = INITIAL_USERS.find((init) => init.id === u.id);
+      return {
+        ...match,
+        ...u,
+        username: u.username || match?.username || u.email.split('@')[0],
+        password: u.password || match?.password || 'admin123',
+        isActive: u.isActive !== undefined ? u.isActive : true,
+      };
+    });
+  });
+
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
     const saved = loadSaved<UserProfile | null>('currentUser', null);
-    return saved || users[0] || INITIAL_USERS[0];
+    if (saved) {
+      const match = INITIAL_USERS.find((init) => init.id === saved.id);
+      return {
+        ...match,
+        ...saved,
+        username: saved.username || match?.username || saved.email.split('@')[0],
+        password: saved.password || match?.password || 'admin123',
+        isActive: saved.isActive !== undefined ? saved.isActive : true,
+      };
+    }
+    return INITIAL_USERS[0];
   });
+
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() =>
+    loadSaved<boolean>('isAuthenticated', false)
+  );
 
   const [warehouses] = useState<Warehouse[]>(() => loadSaved('warehouses', INITIAL_WAREHOUSES));
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('wh-1');
@@ -253,6 +423,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(users));
       localStorage.setItem(`${STORAGE_KEY}_currentUser`, JSON.stringify(currentUser));
+      localStorage.setItem(`${STORAGE_KEY}_isAuthenticated`, JSON.stringify(isAuthenticated));
       localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(products));
       localStorage.setItem(`${STORAGE_KEY}_locations`, JSON.stringify(locations));
       localStorage.setItem(`${STORAGE_KEY}_stockLocations`, JSON.stringify(stockLocations));
@@ -271,6 +442,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [
     users,
     currentUser,
+    isAuthenticated,
     products,
     locations,
     stockLocations,
@@ -294,6 +466,424 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       userName: currentUser.name,
     };
     setAuditEvents((prev) => [newEvent, ...prev]);
+  };
+
+  const login = (identifier: string, password: string): { success: boolean; message?: string } => {
+    const cleanId = identifier.trim().toLowerCase();
+    const cleanPass = password.trim();
+
+    if (!cleanId) {
+      return { success: false, message: 'Por favor, introduza o seu nome de utilizador ou e-mail.' };
+    }
+
+    const user = users.find(
+      (u) =>
+        u.username.toLowerCase() === cleanId ||
+        u.email.toLowerCase() === cleanId
+    );
+
+    if (!user) {
+      return { success: false, message: 'Utilizador não encontrado no sistema.' };
+    }
+
+    if (user.isActive === false) {
+      return { success: false, message: 'Esta conta de utilizador está desativada. Contacte o Administrador.' };
+    }
+
+    if (user.password && user.password !== cleanPass) {
+      return { success: false, message: 'Palavra-passe incorreta. Por favor tente novamente.' };
+    }
+
+    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
+    const updatedUser = { ...user, lastLogin: nowStr };
+
+    setCurrentUser(updatedUser);
+    setUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
+    setIsAuthenticated(true);
+
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_isAuthenticated`, JSON.stringify(true));
+      localStorage.setItem(`${STORAGE_KEY}_currentUser`, JSON.stringify(updatedUser));
+    } catch {
+      // ignore
+    }
+
+    const newEvent: AuditEvent = {
+      id: `aud-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      timestamp: new Date().toISOString(),
+      action: 'LOGIN_SUCESSO',
+      operation: 'Autenticação',
+      userId: user.id,
+      userName: user.name,
+      deviceUsed: 'Teclado / Simulador',
+      details: `Início de sessão autorizado para ${user.name} (@${user.username} - ${user.role}).`,
+    };
+    setAuditEvents((prev) => [newEvent, ...prev]);
+
+    return { success: true };
+  };
+
+  const logout = () => {
+    const prevUser = currentUser;
+    setIsAuthenticated(false);
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_isAuthenticated`, JSON.stringify(false));
+    } catch {
+      // ignore
+    }
+
+    const newEvent: AuditEvent = {
+      id: `aud-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      timestamp: new Date().toISOString(),
+      action: 'LOGOUT',
+      operation: 'Autenticação',
+      userId: prevUser.id,
+      userName: prevUser.name,
+      deviceUsed: 'Teclado / Simulador',
+      details: `Sessão encerrada com sucesso pelo utilizador ${prevUser.name}.`,
+    };
+    setAuditEvents((prev) => [newEvent, ...prev]);
+  };
+
+  const registerUser = (userData: {
+    name: string;
+    username: string;
+    email: string;
+    password?: string;
+    role?: UserRole;
+    avatar?: string;
+    assignedWarehouseId?: string;
+    authProvider?: 'local' | 'google';
+  }): { success: boolean; message?: string; user?: UserProfile } => {
+    const cleanUsername = userData.username.trim().toLowerCase();
+    const cleanEmail = userData.email.trim().toLowerCase();
+
+    if (!userData.name.trim()) {
+      return { success: false, message: 'Por favor, introduza o seu nome completo.' };
+    }
+    if (!cleanUsername) {
+      return { success: false, message: 'O nome de utilizador é obrigatório.' };
+    }
+    if (cleanUsername.length < 3) {
+      return { success: false, message: 'O nome de utilizador deve ter no mínimo 3 caracteres.' };
+    }
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { success: false, message: 'Por favor, introduza um endereço de e-mail válido.' };
+    }
+    if (userData.authProvider !== 'google' && (!userData.password || userData.password.length < 6)) {
+      return { success: false, message: 'A palavra-passe deve ter no mínimo 6 caracteres.' };
+    }
+
+    if (users.some((u) => u.username.toLowerCase() === cleanUsername)) {
+      return { success: false, message: `O nome de utilizador "${cleanUsername}" já está em uso. Escolha outro.` };
+    }
+    if (users.some((u) => u.email.toLowerCase() === cleanEmail)) {
+      return { success: false, message: `Já existe uma conta associada ao e-mail "${cleanEmail}".` };
+    }
+
+    const assignedRole: UserRole = userData.role || 'ADMIN';
+    const basePermissions = getDefaultPermissionsForRole(assignedRole);
+
+    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
+    const newUser: UserProfile = {
+      id: `usr-${Date.now()}`,
+      name: userData.name.trim(),
+      username: cleanUsername,
+      email: cleanEmail,
+      password: userData.password || (userData.authProvider === 'google' ? 'GOOGLE_OAUTH_TOKEN' : '123456'),
+      role: assignedRole,
+      avatar:
+        userData.avatar ||
+        `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
+      permissions: basePermissions,
+      isActive: true,
+      assignedWarehouseId: userData.assignedWarehouseId || selectedWarehouseId,
+      createdAt: new Date().toISOString().split('T')[0],
+      lastLogin: nowStr,
+      authProvider: userData.authProvider || 'local',
+    };
+
+    setUsers((prev) => [...prev, newUser]);
+    setCurrentUser(newUser);
+    setIsAuthenticated(true);
+
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_isAuthenticated`, JSON.stringify(true));
+      localStorage.setItem(`${STORAGE_KEY}_currentUser`, JSON.stringify(newUser));
+    } catch {
+      // ignore
+    }
+
+    const newEvent: AuditEvent = {
+      id: `aud-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      timestamp: new Date().toISOString(),
+      action: 'REGISTO_NOVA_CONTA',
+      operation: 'Autenticação',
+      userId: newUser.id,
+      userName: newUser.name,
+      deviceUsed: 'Teclado / Simulador',
+      details: `Novo registo de conta efetiva: ${newUser.name} (@${newUser.username}, Cargo: ${newUser.role}, Método: ${newUser.authProvider === 'google' ? 'Google Account' : 'Credenciais'}).`,
+    };
+    setAuditEvents((prev) => [newEvent, ...prev]);
+
+    return { success: true, user: newUser };
+  };
+
+  const loginWithGoogle = (googleData: {
+    email: string;
+    name: string;
+    avatar?: string;
+    role?: UserRole;
+  }): { success: boolean; message?: string; user?: UserProfile } => {
+    const cleanEmail = googleData.email.trim().toLowerCase();
+    if (!cleanEmail) {
+      return { success: false, message: 'Endereço de e-mail do Google inválido.' };
+    }
+
+    const existing = users.find((u) => u.email.toLowerCase() === cleanEmail);
+    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+    if (existing) {
+      if (existing.isActive === false) {
+        return {
+          success: false,
+          message: 'Esta conta Google está associada a um utilizador desativado. Contacte o Administrador.',
+        };
+      }
+      const updatedUser: UserProfile = {
+        ...existing,
+        lastLogin: nowStr,
+        authProvider: 'google',
+        avatar: googleData.avatar || existing.avatar,
+        name: existing.name || googleData.name,
+      };
+
+      setUsers((prev) => prev.map((u) => (u.id === existing.id ? updatedUser : u)));
+      setCurrentUser(updatedUser);
+      setIsAuthenticated(true);
+
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_isAuthenticated`, JSON.stringify(true));
+        localStorage.setItem(`${STORAGE_KEY}_currentUser`, JSON.stringify(updatedUser));
+      } catch {
+        // ignore
+      }
+
+      const newEvent: AuditEvent = {
+        id: `aud-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        timestamp: new Date().toISOString(),
+        action: 'LOGIN_GOOGLE',
+        operation: 'Autenticação',
+        userId: updatedUser.id,
+        userName: updatedUser.name,
+        deviceUsed: 'Google OAuth / SSO',
+        details: `Sessão iniciada via sincronização direta com Conta Google (${cleanEmail}).`,
+      };
+      setAuditEvents((prev) => [newEvent, ...prev]);
+
+      return { success: true, user: updatedUser };
+    }
+
+    // Auto-create effective account synced with Google
+    const generatedUsername = cleanEmail.split('@')[0].replace(/[^a-z0-9]/gi, '').toLowerCase() || 'google_user';
+    let uniqueUsername = generatedUsername;
+    let counter = 1;
+    while (users.some((u) => u.username.toLowerCase() === uniqueUsername)) {
+      uniqueUsername = `${generatedUsername}${counter}`;
+      counter++;
+    }
+
+    const assignedRole: UserRole = googleData.role || 'ADMIN';
+    const basePermissions = getDefaultPermissionsForRole(assignedRole);
+
+    const newUser: UserProfile = {
+      id: `usr-g-${Date.now()}`,
+      name: googleData.name.trim() || cleanEmail.split('@')[0],
+      username: uniqueUsername,
+      email: cleanEmail,
+      role: assignedRole,
+      avatar:
+        googleData.avatar ||
+        `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80`,
+      permissions: basePermissions,
+      isActive: true,
+      assignedWarehouseId: selectedWarehouseId,
+      createdAt: new Date().toISOString().split('T')[0],
+      lastLogin: nowStr,
+      authProvider: 'google',
+    };
+
+    setUsers((prev) => [...prev, newUser]);
+    setCurrentUser(newUser);
+    setIsAuthenticated(true);
+
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_isAuthenticated`, JSON.stringify(true));
+      localStorage.setItem(`${STORAGE_KEY}_currentUser`, JSON.stringify(newUser));
+    } catch {
+      // ignore
+    }
+
+    const newEvent: AuditEvent = {
+      id: `aud-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      timestamp: new Date().toISOString(),
+      action: 'REGISTO_GOOGLE',
+      operation: 'Autenticação',
+      userId: newUser.id,
+      userName: newUser.name,
+      deviceUsed: 'Google OAuth / SSO',
+      details: `Nova conta criada e sincronizada instantaneamente via Google Account (${cleanEmail}) com perfil de ${newUser.role}.`,
+    };
+    setAuditEvents((prev) => [newEvent, ...prev]);
+
+    return { success: true, user: newUser };
+  };
+
+  const addUser = (userData: {
+    name: string;
+    username: string;
+    email: string;
+    password?: string;
+    role: UserRole;
+    avatar?: string;
+    assignedWarehouseId?: string;
+    permissions?: Partial<UserPermissions>;
+  }): { success: boolean; message?: string; user?: UserProfile } => {
+    const cleanUsername = userData.username.trim().toLowerCase();
+    const cleanEmail = userData.email.trim().toLowerCase();
+
+    if (!cleanUsername) {
+      return { success: false, message: 'O nome de utilizador é obrigatório.' };
+    }
+    if (users.some((u) => u.username.toLowerCase() === cleanUsername)) {
+      return { success: false, message: `O nome de utilizador "${cleanUsername}" já existe. Escolha outro.` };
+    }
+    if (users.some((u) => u.email.toLowerCase() === cleanEmail)) {
+      return { success: false, message: `O e-mail "${userData.email}" já está associado a outra conta.` };
+    }
+
+    const basePermissions = getDefaultPermissionsForRole(userData.role);
+    const newPermissions: UserPermissions = {
+      ...basePermissions,
+      ...(userData.permissions || {}),
+    };
+
+    const newUser: UserProfile = {
+      id: `usr-${Date.now()}`,
+      name: userData.name.trim(),
+      username: cleanUsername,
+      email: userData.email.trim(),
+      password: userData.password || '123456',
+      role: userData.role,
+      avatar:
+        userData.avatar ||
+        `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80`,
+      permissions: newPermissions,
+      isActive: true,
+      assignedWarehouseId: userData.assignedWarehouseId || selectedWarehouseId,
+      createdAt: new Date().toISOString().split('T')[0],
+      lastLogin: undefined,
+    };
+
+    setUsers((prev) => [...prev, newUser]);
+
+    logAuditEvent({
+      action: 'CRIACAO_UTILIZADOR',
+      operation: 'Segurança',
+      deviceUsed: 'Teclado / Simulador',
+      details: `Novo utilizador cadastrado: ${newUser.name} (@${newUser.username}, Cargo: ${newUser.role}) pelo Administrador ${currentUser.name}.`,
+    });
+
+    return { success: true, user: newUser };
+  };
+
+  const updateUser = (userId: string, data: Partial<UserProfile>): { success: boolean; message?: string } => {
+    const existing = users.find((u) => u.id === userId);
+    if (!existing) return { success: false, message: 'Utilizador não encontrado.' };
+
+    if (data.username) {
+      const cleanUsername = data.username.trim().toLowerCase();
+      if (users.some((u) => u.id !== userId && u.username.toLowerCase() === cleanUsername)) {
+        return { success: false, message: `O nome de utilizador "${cleanUsername}" já pertence a outra conta.` };
+      }
+    }
+
+    setUsers((prev) =>
+      prev.map((u) => {
+        if (u.id === userId) {
+          const updated = { ...u, ...data };
+          if (currentUser.id === userId) {
+            setCurrentUser(updated);
+          }
+          return updated;
+        }
+        return u;
+      })
+    );
+
+    logAuditEvent({
+      action: 'ATUALIZACAO_UTILIZADOR',
+      operation: 'Segurança',
+      deviceUsed: 'Teclado / Simulador',
+      details: `Dados do utilizador ${existing.name} atualizados pelo Administrador ${currentUser.name}.`,
+    });
+
+    return { success: true };
+  };
+
+  const changeUserPassword = (userId: string, newPassword: string): { success: boolean; message?: string } => {
+    const target = users.find((u) => u.id === userId);
+    if (!target) return { success: false, message: 'Utilizador não encontrado.' };
+    if (!newPassword || newPassword.length < 4) {
+      return { success: false, message: 'A palavra-passe deve conter no mínimo 4 caracteres.' };
+    }
+
+    setUsers((prev) =>
+      prev.map((u) => {
+        if (u.id === userId) {
+          const updated = { ...u, password: newPassword };
+          if (currentUser.id === userId) {
+            setCurrentUser(updated);
+          }
+          return updated;
+        }
+        return u;
+      })
+    );
+
+    logAuditEvent({
+      action: 'ALTERACAO_SENHA',
+      operation: 'Segurança',
+      deviceUsed: 'Teclado / Simulador',
+      details: `Palavra-passe do utilizador ${target.name} alterada com sucesso.`,
+    });
+
+    return { success: true };
+  };
+
+  const deleteUser = (userId: string): { success: boolean; message?: string } => {
+    if (userId === currentUser.id) {
+      return { success: false, message: 'Não é possível eliminar a conta com sessão ativa no momento.' };
+    }
+
+    const target = users.find((u) => u.id === userId);
+    if (!target) return { success: false, message: 'Utilizador não encontrado.' };
+
+    const remainingAdmins = users.filter((u) => u.id !== userId && u.role === 'ADMIN');
+    if (target.role === 'ADMIN' && remainingAdmins.length === 0) {
+      return { success: false, message: 'Não é permitido eliminar o único Administrador Geral do sistema.' };
+    }
+
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
+
+    logAuditEvent({
+      action: 'EXCLUSAO_UTILIZADOR',
+      operation: 'Segurança',
+      deviceUsed: 'Teclado / Simulador',
+      details: `Utilizador ${target.name} (@${target.username}) excluído do sistema pelo Administrador.`,
+    });
+
+    return { success: true };
   };
 
   const openScannerModal = (mode: ScannerModalMode = 'LOOKUP', targetId?: string) => {
@@ -1322,6 +1912,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentUser,
         setCurrentUser,
         users,
+        isAuthenticated,
+        login,
+        logout,
+        registerUser,
+        loginWithGoogle,
+        addUser,
+        updateUser,
+        deleteUser,
+        changeUserPassword,
         updateUserPermissions,
         selectedWarehouseId,
         setSelectedWarehouseId,

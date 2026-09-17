@@ -6,6 +6,8 @@ import {
   UserCheck,
   ShieldAlert,
   ChevronDown,
+  LogOut,
+  Users,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -13,11 +15,13 @@ import { PWAInstallButton } from './PWAInstallButton';
 interface HeaderProps {
   onOpenQuickPOS: () => void;
   onOpenUserPermissions: () => void;
+  onNavigateUsers?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenQuickPOS,
   onOpenUserPermissions,
+  onNavigateUsers,
 }) => {
   const {
     currentUser,
@@ -27,6 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
     selectedWarehouseId,
     setSelectedWarehouseId,
     openScannerModal,
+    logout,
   } = useApp();
 
   return (
@@ -129,38 +134,46 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             {/* Dropdown Menu for Quick User Switching */}
-            <div className="absolute right-0 mt-1 w-60 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl p-2 hidden group-hover:block z-50 text-xs">
-              <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-800">
-                Alternar Utilizador de Teste:
+            <div className="absolute right-0 mt-1 w-64 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl p-2 hidden group-hover:block z-50 text-xs">
+              <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-800 flex items-center justify-between">
+                <span>Sessão Atual</span>
+                <span className="text-amber-400 font-mono">@{currentUser.username}</span>
               </div>
-              <div className="py-1 space-y-1">
-                {users.map((u) => (
+
+              {onNavigateUsers && (
+                <div className="py-1 border-b border-slate-800">
                   <button
-                    key={u.id}
-                    onClick={() => setCurrentUser(u)}
-                    className={`w-full text-left p-2 rounded-lg flex items-center justify-between transition-colors ${
-                      currentUser.id === u.id
-                        ? 'bg-indigo-600/20 text-indigo-300 font-semibold border border-indigo-500/30'
-                        : 'text-slate-300 hover:bg-slate-800'
-                    }`}
+                    onClick={onNavigateUsers}
+                    className="w-full text-left p-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-2 transition-colors cursor-pointer"
                   >
+                    <Users className="w-4 h-4 text-amber-400" />
                     <div>
-                      <div className="font-semibold text-xs">{u.name}</div>
-                      <div className="text-[10px] text-slate-400">
-                        {u.role === 'ADMIN' ? 'Acesso Total' : u.role === 'OPERATOR_STOCK' ? 'Estoque e Scanner' : 'Faturação e Vendas'}
-                      </div>
+                      <div className="font-semibold text-xs">Gestão de Utilizadores</div>
+                      <div className="text-[10px] text-slate-400">Criar contas e gerir credenciais</div>
                     </div>
-                    {currentUser.id === u.id && <UserCheck className="w-4 h-4 text-indigo-400" />}
                   </button>
-                ))}
-              </div>
-              <div className="pt-1.5 mt-1 border-t border-slate-800">
+                </div>
+              )}
+
+              <div className="pt-1.5 border-t border-slate-800/80 space-y-1">
                 <button
                   onClick={onOpenUserPermissions}
-                  className="w-full text-left px-2 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 text-[11px] flex items-center gap-1.5"
+                  className="w-full text-left px-2 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 text-[11px] flex items-center gap-1.5 cursor-pointer"
                 >
                   <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                  Gerir Permissões Granulares (Seção 31)
+                  Permissões Granulares (Seção 31)
+                </button>
+
+                <button
+                  id="header-logout-button"
+                  onClick={logout}
+                  className="w-full text-left p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-300 hover:text-red-200 border border-red-500/20 flex items-center justify-between transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <LogOut className="w-4 h-4 text-red-400" />
+                    <span className="font-semibold text-xs">Mudar de Utilizador (Sair)</span>
+                  </div>
+                  <span className="text-[10px] text-red-400/80">Bloquear</span>
                 </button>
               </div>
             </div>

@@ -12,6 +12,8 @@ import {
   Activity,
   Printer,
   ShieldAlert,
+  Users,
+  LogOut,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
@@ -26,6 +28,7 @@ export type NavTab =
   | 'assets'
   | 'finance'
   | 'audit'
+  | 'users'
   | 'labels';
 
 interface SidebarProps {
@@ -39,7 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setActiveTab,
   onOpenUserPermissions,
 }) => {
-  const { products, getProductStock, inventorySessions, invoices, accountsReceivable } = useApp();
+  const { products, getProductStock, inventorySessions, invoices, accountsReceivable, logout } = useApp();
 
   // Badges calculations
   const lowStockCount = products.filter((p) => getProductStock(p.id) <= p.minStock).length;
@@ -122,6 +125,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: Activity,
         },
         {
+          id: 'users' as NavTab,
+          label: 'Gestão de Utilizadores',
+          icon: Users,
+        },
+        {
           id: 'labels' as NavTab,
           label: 'Gerador de Etiquetas',
           icon: Printer,
@@ -177,14 +185,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ))}
       </div>
 
-      {/* Footer / Permissions button */}
-      <div className="p-3 border-t border-slate-800 bg-slate-950/40">
+      {/* Footer / Permissions and Logout buttons */}
+      <div className="p-3 border-t border-slate-800 bg-slate-950/60 space-y-1">
         <button
           onClick={onOpenUserPermissions}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors cursor-pointer"
         >
           <ShieldAlert className="w-4 h-4 text-amber-400" />
           <span>Permissões de Utilizadores</span>
+        </button>
+
+        <button
+          id="sidebar-logout-button"
+          onClick={logout}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all cursor-pointer"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>Mudar de Utilizador (Sair)</span>
         </button>
       </div>
     </aside>

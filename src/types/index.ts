@@ -29,13 +29,26 @@ export interface UserPermissions {
 export interface UserProfile {
   id: string;
   name: string;
+  username: string;
+  password?: string;
   email: string;
   role: UserRole;
   avatar: string;
   permissions: UserPermissions;
+  isActive?: boolean;
+  assignedWarehouseId?: string;
+  createdAt?: string;
+  lastLogin?: string;
+  authProvider?: 'local' | 'google';
 }
 
-export type ScanDeviceType = 'Scanner USB' | 'Scanner Bluetooth' | 'Câmera Smartphone' | 'Teclado / Simulador';
+export type ScanDeviceType =
+  | 'Scanner USB'
+  | 'Scanner Bluetooth'
+  | 'Câmera Smartphone'
+  | 'Teclado / Simulador'
+  | 'Google OAuth / SSO'
+  | 'Sistema / Web';
 
 export interface Product {
   id: string;
