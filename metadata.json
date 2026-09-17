@@ -1,0 +1,6 @@
+{
+  "name": "Inventa KAF",
+  "description": "Sistema Integrado de Inventário, Estoque, Armazéns, Faturação, Finanças e Contabilidade com scanner Barcode e QR Code.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
